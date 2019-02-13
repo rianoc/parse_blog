@@ -1,9 +1,18 @@
 
 # Parsing data in kdb+
 
-Passing data between systems can often become complex if not impossible due to lack of interoperability. A common way to simplify this communication is to use text based formats. CSV traditionally and now often JSON are used for this purpose.
-
+Passing data between systems can often become complex if not impossible due to lack of interoperability.
 Kdb+ has many available [interfaces](https://code.kx.com/q/interfaces/) but it's native text parsing skills remain extremely important.
+
+Using text based formats simplifies communication. CSV traditionally and now often JSON are used for this purpose.
+These can sometimes be used only during exploration phases before more efficient and direct methods are set in place.
+
+However this text based basing of data can also be part of:
+
+1. A large once off ingestion of data.
+1. An ongoing ingestion of data from a provider which does not provide other methods.
+
+In both of these cases we want to ensure the parsing of data is as efficient as possible.
 
 This notebook offers some tips to implement clean and efficient parsing of textual formats to kdb+.
 
@@ -11,14 +20,24 @@ This notebook offers some tips to implement clean and efficient parsing of textu
 
 CSV files do not have flexibility in the type data structures they hold but parsing is straight forward.
 
+Take the following example file:
+
 
 ```q
-/tab.csv:
-/
-longCol,floatCol,symbolCol,stringCol,skipCol,dateCol,timeCol,ignoreCol
-1,4,b,bb,8,2018-11-23,00:01:00.000,--
-2,5,h,dd,8,2018-11-23,00:01:00.003,--
+read0 `:tab.csv
 ```
+
+
+
+
+    "longCol,floatCol,symbolCol,stringCol,skipCol,dateCol,timeCol,ignoreCol"
+    "1,4,b,bb,8,2018-11-23,00:01:00.000,--"
+    "2,5,h,dd,8,2018-11-23,00:01:00.003,--"
+
+
+
+
+With one line it was possible to parse to the exact type of table required
 
 
 ```q
@@ -47,12 +66,15 @@ meta tab
 
 
 
+
+
 * `*` is used to read a string column. `stringCol`
 * A space ` ` can be used to ignore a given column. `skipCol`
 * Any column to the right which is not given a parse rule is ignored. `ignoreCol`
 
 It is important to use `*` as your default rule rather than `S`. This is to ensure the process memory does not become bloated with unnecessary interned strings.
 
+For more information, setting and the loading of fixed-width fields see:
 * [https://code.kx.com/q/ref/filenumbers/#load-csv](https://code.kx.com/q/ref/filenumbers/#load-csv)
 
 ## Complex parsing
@@ -115,7 +137,7 @@ manyDates:100000#enlist "30/12/2010"
 
 
 
-    102
+    99
 
 
 
@@ -129,7 +151,7 @@ manyDates:100000#enlist "30/12/2010"
 
 
 
-    6
+    7
 
 
 
@@ -165,12 +187,17 @@ Many other formats can be parsed by kdb+
 
 
 
-### .Q.fu
+## Speed and efficiency 
 
-There are commonly fields which we cannot parse natively.
+### Don't do the same work twice (.Q.fu)
 
-`.Q.fu` provides the opportunity to improve performance in these cases.
+There are commonly fields which we cannot parse natively. Completing these custom string manipulations can be a computationally intensive task.
+One way to avoid this is by applying the function once per distinct item and mapping the result.
+For this reason it is only of benefit when the data has a smaller number of distinct elements in it.
 
+.i.e suitable for dates but not unique timestamps etc.
+
+`.Q.fu` is the inbuilt function which provides simplifies this task
 
 
 ```q
@@ -210,7 +237,7 @@ manyDates:100000#enlist "November 30 2018"
 
 
 
-    158
+    130
 
 
 
@@ -224,24 +251,25 @@ manyDates:100000#enlist "November 30 2018"
 
 
 
-    16
+    12
 
 
 
 
-Note that `.Q.fu` gains it speed by applying the function once per distinct item and mapping the result.
+### Straight line speed (Vectorised operations)
 
-For this reason it is only of benefit when the data has a smaller number of distinct elements in it.
+Sometimes as part of parsing data mathematical calculations will need to be performed.
+A common example of this is differing epochs between languages and systems.
 
-.i.e suitable for dates but not unique timestamps etc.
+When parsing a column one may write functions which iterate though a field at a time rather than operating on the whole column.
+This is sometimes the only choice. However if calculations are involved kdb+ has native vector based operations which gain huge efficiency by operating on the column as a whole.
 
-### Vectorised operations 
 
 
 ```q
-/Assume we are given a field which is seconds since 1900.01.01D00
-/"3755289600"
-/With that information we can extract what is needed from the field
+//Assume we are given a field which is seconds since 1900.01.01D00
+//"3755289600"
+//With that information we can extract what is needed from the field
 1900.01.01D00+0D00:00:01*"J"$"3755289600"
 ```
 
@@ -255,16 +283,16 @@ For this reason it is only of benefit when the data has a smaller number of dist
 
 
 ```q
-/If may be tempting to write a function and each through the data
+//If may be tempting to write a function and iterate through the data
 manyTimes:1000000#enlist "3755289600"
 \t {1900.01.01D00+0D00:00:01*"J"$x} each manyTimes
-/But this will perform poorly
+//But this will perform poorly
 ```
 
 
 
 
-    708
+    447
 
 
 
@@ -279,10 +307,35 @@ manyTimes:1000000#enlist "3755289600"
 
 
 
-    31
+    32
 
 
 
+
+### Skip the middle man (named pipes)
+
+Often plain text files will come compressed. This requirement them to be:
+1. Decompressed to disk in full
+2. Ingested from disk
+
+This step in an inefficient use of resources. As the uncompressed file will only ever be read once.
+Named pipes allow the disk to be taken out of the equation by streaming the uncompressed data directly to kdb+
+
+For more information and examples see:
+https://code.kx.com/q/cookbook/named-pipes/
+
+### Stream it in (.Q.fs & .Q.fps)
+
+As text files grow the memory usage of the ingestion process can become a concern.
+`.Q.fs` and `.Q.fps` allow control of this by providing the ability to specify the number of lines at a time to pull in to memory. Then each batch can be published to another process on written to disk before continuing.
+
+* `.Q.fs`  - Operates on standard files
+* `.Q.fps` - Operates on named pipes
+
+As well as memory management `.Q.fps` also allows us to ensure our optimizations using `.Q.fu` and vectorised operations are supplied with sufficient data on each invocation to see speed ups.
+
+* https://code.kx.com/q/ref/dotq/#qfs-streaming-algorithm
+* https://code.kx.com/q/ref/dotq/#qfps-streaming-algorithm
 
 ## JSON
 
@@ -320,7 +373,7 @@ Basic datatype support also means we cannot simply rely on the inbuilt `.j` func
 
 * [https://code.kx.com/q/ref/dotj/](https://code.kx.com/q/ref/dotj/)
 
-## JSON table encoding
+### JSON table encoding
 
 
 ```q
@@ -380,6 +433,7 @@ meta .j.k .j.j tab
     1       4        ,"b"      "bb"      "2018-11-23" "00:01:00.000"
     2       5        ,"h"      "dd"      "2018-11-23" "00:01:00.003"
 
+
     c        | t f a
     ---------| -----
     longCol  | f    
@@ -416,7 +470,7 @@ tab~flip "jfS*DT"$flip .j.k .j.j tab
 * [https://code.kx.com/q/ref/casting/#cast](https://code.kx.com/q/ref/casting/#cast)
 * [https://code.kx.com/q/ref/casting/#tok](https://code.kx.com/q/ref/casting/#tok)
 
-## Field based JSON encoding
+### Field based JSON encoding
 
 JSON can hold more complex data structures than csv
 
@@ -424,16 +478,23 @@ One common example are dictionaries
 
 
 ```q
-/sample.json:
-/
-{"data":"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65","expiry":1527796725,"requestID":["b4a566eb-2529-5cf4-1327-857e3d73653e"]}
-{"result":"success","message":"success","receipt":[123154,4646646],"requestID":["b4a566eb-2529-5cf4-1327-857e3d73653e"]}
-{"receipt":[12345678,98751466],"requestID":["b4a566eb-2529-5cf4-1327-857e3d73653e"]}
-{"data":"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65","requestID":["b4a566eb-2529-5cf4-1327-857e3d73653e"]}
-{"receipt":[12345678,98751466],"requestID":["b4a566eb-2529-5cf4-1327-857e3d73653e"]}
-{"listSize":2,"list":"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev"}
-{"requestID":["b4a566eb-2529-5cf4-1327-857e3d73653e"]}
+\c 25 200
+read0 `:sample.json
 ```
+
+
+
+
+    "{\"data\":\"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65\",\"expiry\":1527796725,\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
+    "{\"result\":\"success\",\"message\":\"success\",\"receipt\":[123154,4646646],\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
+    "{\"receipt\":[12345678,98751466],\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
+    "{\"data\":\"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65\",\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
+    "{\"receipt\":[12345678,98751466],\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
+    "{\"listSize\":2,\"list\":\"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev\"}"
+    "{\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
+
+
+
 
 One way to manage these items may be to create a utility which will cast any dictionary using `key` values to control casting rules.
 
@@ -491,7 +552,7 @@ k2j[`blocks]:(::);
     receipt  | 1.234568e+007 9.875147e+007
     requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
     listSize| 2f
-    list    | "lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccpr..
+    list    | "lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev"
     requestID| "b4a566eb-2529-5cf4-1327-857e3d73653e"
 
 
@@ -515,7 +576,7 @@ k2j[`blocks]:(::);
     receipt  | 12345678 98751466
     requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
     listSize| 2
-    list    | "lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccpr..
+    list    | "lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev"
     requestID| "b4a566eb-2529-5cf4-1327-857e3d73653e"
 
 
@@ -533,7 +594,7 @@ k2j[`blocks]:(::);
 
 
 
-## Querying unstructured data
+### Querying unstructured data
 
 With the release of Anymap in kdb+ 3.6 unstructured data has become much easier to manage in kdb+.
 
@@ -552,15 +613,15 @@ sample
 
 
 
-    data                                                                           
-    -------------------------------------------------------------------------------
-    `data`expiry`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866..
-    `result`message`receipt`requestID!(`success;"success";123154 4646646;,"b4a566..
-    `receipt`requestID!(12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e") 
-    `data`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf50..
-    `receipt`requestID!(12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e") 
-    `listSize`list!(2;"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazb..
-    (,`requestID)!,,"b4a566eb-2529-5cf4-1327-857e3d73653e"                         
+    data                                                                                                                                                         
+    -------------------------------------------------------------------------------------------------------------------------------------------------------------
+    `data`expiry`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
+    `result`message`receipt`requestID!(`success;"success";123154 4646646;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                
+    `receipt`requestID!(12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
+    `data`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                
+    `receipt`requestID!(12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
+    `listSize`list!(2;"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev")        
+    (,`requestID)!,,"b4a566eb-2529-5cf4-1327-857e3d73653e"                                                                                                       
 
 
 
@@ -627,15 +688,14 @@ select from (3#sample) where null data[;`expiry]
 
 
 
-    data                                                                           
-    -------------------------------------------------------------------------------
-    `result`message`receipt`requestID!(`success;"success";123154 4646646;,"b4a566..
+    data                                                                                                         
+    -------------------------------------------------------------------------------------------------------------
+    `result`message`receipt`requestID!(`success;"success";123154 4646646;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
 
     evaluation error:
     type
       [0]  select from (3#sample) where null data[;`expiry]
            ^
-    
 
 
 Checking if a given key in in the rows dictionary will only return rows which do not have the key
@@ -648,9 +708,9 @@ select from sample where `expiry in/:key each data, not null data[;`expiry]
 
 
 
-    data                                                                           
-    -------------------------------------------------------------------------------
-    `data`expiry`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866..
+    data                                                                                                                                                         
+    -------------------------------------------------------------------------------------------------------------------------------------------------------------
+    `data`expiry`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
 
 
 
@@ -659,24 +719,22 @@ If we prepend each dictionary with the null symbol key ``` and generic null valu
 
 
 ```q
-update data:(enlist[`]!enlist (::))(,)/:data from `sample
+update data:(enlist[`]!enlist (::))(,)/:data from `sample;
 sample
 ```
 
 
 
 
-    `sample
-
-    data                                                                           
-    -------------------------------------------------------------------------------
-    ``data`expiry`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa..
-    ``result`message`receipt`requestID!(::;`success;"success";123154 4646646;,"b4..
-    ``receipt`requestID!(::;12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d736..
-    ``data`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568..
-    ``receipt`requestID!(::;12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d736..
-    ``listSize`list!(::;2;"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumx..
-    ``requestID!(::;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                       
+    data                                                                                                                                                             
+    -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+    ``data`expiry`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
+    ``result`message`receipt`requestID!(::;`success;"success";123154 4646646;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                
+    ``receipt`requestID!(::;12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
+    ``data`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                
+    ``receipt`requestID!(::;12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
+    ``listSize`list!(::;2;"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev")        
+    ``requestID!(::;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                                                         
 
 
 
@@ -685,13 +743,13 @@ All nulls when a given key is missing are now `(::)`
 
 
 ```q
-select data[;`expiry] from sample
+select expiry:data[;`expiry] from sample
 ```
 
 
 
 
-    x                       
+    expiry                  
     ------------------------
     17682D19:58:45.000000000
     ::                      
@@ -714,14 +772,35 @@ select from sample where not null data[;`expiry]
 
 
 
-    data                                                                           
-    -------------------------------------------------------------------------------
-    ``data`expiry`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa..
+    data                                                                                                                                                             
+    -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+    ``data`expiry`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
 
 
 
+
+These `(::)` can also be replaced with filled with chosen values.
+
+Here an infinite value is chosen:
 
 
 ```q
-//ToDo: Named pipes
+fill:{@[y;where null y;:;x]}
+select expiry:fill[0Wn]data[;`expiry] from sample
 ```
+
+
+
+
+    expiry                  
+    ------------------------
+    17682D19:58:45.000000000
+    0W                      
+    0W                      
+    0W                      
+    0W                      
+    0W                      
+    0W                      
+
+
+
