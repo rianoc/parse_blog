@@ -1,2 +1,2 @@
 # parse
-Notes on parsing csv and JSON data in kdb+
+Blog on parsing csv data in kdb+

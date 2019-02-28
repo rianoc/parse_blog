@@ -1,20 +1,12 @@
 
 # Parsing data in kdb+
 
-Passing data between systems can often become complex if not impossible due to lack of interoperability.
-Kdb+ has many available [interfaces](https://code.kx.com/q/interfaces/) but it's native text parsing skills remain extremely important.
+Passing data between systems can often become complex, if not impossible, due to lack of interoperability. While kdb+ provides many [interfaces](https://code.kx.com/q/interfaces/) to simplify integration its native text parsing capabilities remain extremely important too as they can be used to greatly simplify data ingestion and inter-process communication. These requirements are often encountered exploration or proof-of-concept phases of projects but there are two additional areas where they can be critical:
 
-Using text based formats simplifies communication. CSV traditionally and now often JSON are used for this purpose.
-These can sometimes be used only during exploration phases before more efficient and direct methods are set in place.
+* For large once off ingestion of data
+* For ongoing ingestion of data from a provider which does not provide other methods.
 
-However this text based basing of data can also be part of:
-
-1. A large once off ingestion of data.
-1. An ongoing ingestion of data from a provider which does not provide other methods.
-
-In both of these cases we want to ensure the parsing of data is as efficient as possible.
-
-This notebook offers some tips to implement clean and efficient parsing of textual formats to kdb+.
+In both of these cases it is important the parsing of data is as efficient as possible. In this blog we offer some tips to implement clean and efficient parsing of CSV formats to kdb+ and n a follow-up blow we will look at the increasingly popular alternative format, JSON.
 
 ## CSV
 
@@ -66,16 +58,70 @@ meta tab
 
 
 
-
-
 * `*` is used to read a string column. `stringCol`
 * A space ` ` can be used to ignore a given column. `skipCol`
 * Any column to the right which is not given a parse rule is ignored. `ignoreCol`
 
-It is important to use `*` as your default rule rather than `S`. This is to ensure the process memory does not become bloated with unnecessary interned strings.
-
 For more information, setting and the loading of fixed-width fields see:
 * [https://code.kx.com/q/ref/filenumbers/#load-csv](https://code.kx.com/q/ref/filenumbers/#load-csv)
+
+## Don't clog your memory
+
+A common issue is users who are ingesting fields will default to using `S`.
+This is the symbol [datatype](https://code.kx.com/q/ref/card/#datatypes) which is not designed for the passing of random character data. Instead `*` should be used to ingest to character arrays. Type `10h` or `C` in a table meta.
+
+This is because symbols are interned strings. Any time a symbol of a new value is created in a process it will be added to an internal lookup table. These cannot be freed during garbage collection with [.Q.gc](https://code.kx.com/q/ref/dotq/#qgc-garbage-collect) and will instead persist in the memory of the process until it exits.
+
+You can see the number of syms in this table and the space memory they are using with [.Q.w](https://code.kx.com/q/ref/dotq/#qw-memory-stats)
+
+
+```q
+.Q.w[]`syms`symw //Check the start values
+```
+
+
+
+
+    1206 53636
+
+
+
+
+
+```q
+r:`$string til 10000 //Create a list of 10 thousand symbols
+r
+.Q.w[]`syms`symw
+```
+
+
+
+
+    `0`1`2`3`4`5`6`7`8`9`10`11`12`13`14`15`16`17`18`19`20`21`22`23`24`25`26`27`28..
+
+    11204 588234
+
+
+
+
+
+```q
+delete r from `.
+.Q.gc[]
+.Q.w[]`syms`symw //After the object is deleted and garbage collection no memory is returned to the process 
+```
+
+
+
+
+    `.
+
+    0
+
+    11205 588264
+
+
+
 
 ## Complex parsing
 
@@ -86,6 +132,7 @@ For more information, setting and the loading of fixed-width fields see:
 
 
 ```q
+//You may get an unexpected date
 \z 0
 "D"$"06/01/2010"
 ```
@@ -100,6 +147,22 @@ For more information, setting and the loading of fixed-width fields see:
 
 
 ```q
+//Or a null
+\z 0
+"D"$"30/12/2010"
+```
+
+
+
+
+    0Nd
+
+
+
+
+
+```q
+//Changing z to 1 gives the intended result
 \z 1
 "D"$"06/01/2010"
 ```
@@ -116,20 +179,6 @@ This is much preferred than the alternative
 
 
 ```q
-\z 0
-"D"$"30/12/2010"
-```
-
-
-
-
-    0Nd
-
-
-
-
-
-```q
 manyDates:100000#enlist "30/12/2010"
 \t "D"${"." sv reverse "/" vs x} each manyDates
 ```
@@ -137,7 +186,7 @@ manyDates:100000#enlist "30/12/2010"
 
 
 
-    99
+    142
 
 
 
@@ -158,7 +207,9 @@ manyDates:100000#enlist "30/12/2010"
 
 ### Other accepted formats
 
-Many other formats can be parsed by kdb+
+Many other formats can be parsed by kdb+.
+
+A selection:
 
 
 ```q
@@ -176,13 +227,52 @@ Many other formats can be parsed by kdb+
 
 ```q
 "D"$"2018 Jan 30"
-//ToDo: flesh out this list with all accepted
 ```
 
 
 
 
     2018.01.30
+
+
+
+
+
+```q
+"D"$"2018 January 30"
+```
+
+
+
+
+    2018.01.30
+
+
+
+
+
+```q
+"P"$"1546300800" //Unix epoch
+```
+
+
+
+
+    2019.01.01D00:00:00.000000000
+
+
+
+
+
+```q
+//These value only parse to the deprecated datetime Z format - but can quickly be cast to timestamps
+`timestamp$"Z"$"2019-01-01T00:00:00.000Z"
+```
+
+
+
+
+    2019.01.01D00:00:00.000000000
 
 
 
@@ -237,7 +327,7 @@ manyDates:100000#enlist "November 30 2018"
 
 
 
-    130
+    166
 
 
 
@@ -251,7 +341,7 @@ manyDates:100000#enlist "November 30 2018"
 
 
 
-    12
+    17
 
 
 
@@ -292,7 +382,7 @@ manyTimes:1000000#enlist "3755289600"
 
 
 
-    447
+    593
 
 
 
@@ -307,7 +397,7 @@ manyTimes:1000000#enlist "3755289600"
 
 
 
-    32
+    34
 
 
 
@@ -327,480 +417,14 @@ https://code.kx.com/q/cookbook/named-pipes/
 ### Stream it in (.Q.fs & .Q.fps)
 
 As text files grow the memory usage of the ingestion process can become a concern.
-`.Q.fs` and `.Q.fps` allow control of this by providing the ability to specify the number of lines at a time to pull in to memory. Then each batch can be published to another process on written to disk before continuing.
+`.Q.fs`,`.Q.fsn` and `.Q.fps` allow control of this by providing the ability to specify the number of lines at a time to pull in to memory. Then each batch can be published to another process on written to disk before continuing.
 
-* `.Q.fs`  - Operates on standard files
-* `.Q.fps` - Operates on named pipes
+* `.Q.fs`   - Operates on standard files
+* `.Q.fsn` - Allows the specification of chunk size
+* `.Q.fps`  - Operates on named pipes
 
-As well as memory management `.Q.fps` also allows us to ensure our optimizations using `.Q.fu` and vectorised operations are supplied with sufficient data on each invocation to see speed ups.
+As well as memory management `.Q.fsn` also allows us to ensure our optimizations using `.Q.fu` and vectorised operations are supplied with sufficient data on each invocation to see speed ups.
 
 * https://code.kx.com/q/ref/dotq/#qfs-streaming-algorithm
+* https://code.kx.com/q/ref/dotq/#qfsn-streaming-algorithm
 * https://code.kx.com/q/ref/dotq/#qfps-streaming-algorithm
-
-## JSON
-
-JSON can hold more complex structures than CSV files which is useful but can cause added complexity during ingestion.
-
-Basic datatype support also means we cannot simply rely on the inbuilt `.j` functions in kdb+
-
-
-```q
-//Roundtrip fails
-6~.j.k .j.j 6
-```
-
-
-
-
-    0b
-
-
-
-
-
-```q
-//All numerics are devolved to floats
-.j.k .j.j 6
-```
-
-
-
-
-    6f
-
-
-
-
-* [https://code.kx.com/q/ref/dotj/](https://code.kx.com/q/ref/dotj/)
-
-### JSON table encoding
-
-
-```q
-//Create a sample table
-tab:([] longCol:1 2;
-        floatCol:4 5f;
-        symbolCol:`b`h;
-        stringCol:("bb";"dd");
-        dateCol:2018.11.23 2018.11.23;
-        timeCol:00:01:00.000 00:01:00.003)
-tab
-```
-
-
-
-
-    longCol floatCol symbolCol stringCol dateCol    timeCol     
-    ------------------------------------------------------------
-    1       4        b         "bb"      2018.11.23 00:01:00.000
-    2       5        h         "dd"      2018.11.23 00:01:00.003
-
-
-
-
-
-```q
-meta tab
-```
-
-
-
-
-    c        | t f a
-    ---------| -----
-    longCol  | j    
-    floatCol | f    
-    symbolCol| s    
-    stringCol| C    
-    dateCol  | d    
-    timeCol  | t    
-
-
-
-
-
-```q
-//Round trip to JSON results in many differences
-.j.k .j.j tab
-meta .j.k .j.j tab
-```
-
-
-
-
-    longCol floatCol symbolCol stringCol dateCol      timeCol       
-    ----------------------------------------------------------------
-    1       4        ,"b"      "bb"      "2018-11-23" "00:01:00.000"
-    2       5        ,"h"      "dd"      "2018-11-23" "00:01:00.003"
-
-
-    c        | t f a
-    ---------| -----
-    longCol  | f    
-    floatCol | f    
-    symbolCol| C    
-    stringCol| C    
-    dateCol  | C    
-    timeCol  | C    
-
-
-
-
-
-```q
-//Use lower case casts on numerics and captial case tok on string type data
-//* will leave a column untouched
-flip "jfS*DT"$flip .j.k .j.j tab
-tab~flip "jfS*DT"$flip .j.k .j.j tab
-```
-
-
-
-
-    longCol floatCol symbolCol stringCol dateCol    timeCol     
-    ------------------------------------------------------------
-    1       4        b         "bb"      2018.11.23 00:01:00.000
-    2       5        h         "dd"      2018.11.23 00:01:00.003
-
-    1b
-
-
-
-
-* [https://code.kx.com/q/ref/casting/#cast](https://code.kx.com/q/ref/casting/#cast)
-* [https://code.kx.com/q/ref/casting/#tok](https://code.kx.com/q/ref/casting/#tok)
-
-### Field based JSON encoding
-
-JSON can hold more complex data structures than csv
-
-One common example are dictionaries
-
-
-```q
-\c 25 200
-read0 `:sample.json
-```
-
-
-
-
-    "{\"data\":\"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65\",\"expiry\":1527796725,\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
-    "{\"result\":\"success\",\"message\":\"success\",\"receipt\":[123154,4646646],\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
-    "{\"receipt\":[12345678,98751466],\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
-    "{\"data\":\"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65\",\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
-    "{\"receipt\":[12345678,98751466],\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
-    "{\"listSize\":2,\"list\":\"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev\"}"
-    "{\"requestID\":[\"b4a566eb-2529-5cf4-1327-857e3d73653e\"]}"
-
-
-
-
-One way to manage these items may be to create a utility which will cast any dictionary using `key` values to control casting rules.
-
-This can allow more complex parsing rules for each field.
-
-
-```q
-//Converts JSON to q with rules per key
-decode:{[j]k:.j.k j;(key k)!j2k[key k]@'value k}
-
-//Converts q to JSON with rules per key
-encode:{[k].j.j (key k)!k2j[key k]@'value k}
-
-//Rules for JSON to q conversion
-j2k:(enlist `)!enlist (::);
-
-j2k[`expiry]:{0D00:00:01*`long$x};
-j2k[`result]:`$;
-j2k[`receipt]:`long$;
-j2k[`id]:{"G"$first x};
-j2k[`listSize]:`long$;
-j2k[`data]:cut[64];
-j2k[`blockCount]:`long$;
-j2k[`blocks]:raze;
-
-//Rules for q to JSON conversion
-k2j:(enlist `)!enlist (::);
-
-k2j[`expiry]:{`long$%[x;0D00:00:01]};
-k2j[`result]:(::);
-k2j[`receipt]:(::);
-k2j[`id]:enlist;
-k2j[`listSize]:(::);
-k2j[`data]:raze;
-k2j[`blocks]:(::);
-```
-
-
-```q
-//Using default .j.k our structures are not transferred as we wish
-{show .j.k x} each read0 `:sample.json;
-```
-
-    data     | "26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65"
-    expiry   | 1.527797e+009
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    result   | "success"
-    message  | "success"
-    receipt  | 123154 4646646f
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    receipt  | 1.234568e+007 9.875147e+007
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    data     | "26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65"
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    receipt  | 1.234568e+007 9.875147e+007
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    listSize| 2f
-    list    | "lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev"
-    requestID| "b4a566eb-2529-5cf4-1327-857e3d73653e"
-
-
-
-```q
-//Using decode utility captures complex structures
-{show decode x} each read0 `:sample.json;
-```
-
-    data     | ,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65"
-    expiry   | 17682D19:58:45.000000000
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    result   | `success
-    message  | "success"
-    receipt  | 123154 4646646
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    receipt  | 12345678 98751466
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    data     | "26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65"
-    requestID| "b4a566eb-2529-5cf4-1327-857e3d73653e"                            
-    receipt  | 12345678 98751466
-    requestID| ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    listSize| 2
-    list    | "lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev"
-    requestID| "b4a566eb-2529-5cf4-1327-857e3d73653e"
-
-
-
-```q
-//The encode utility allows us to roundtrip
-{sample~{encode decode x} each sample:read0 x}`:sample.json
-```
-
-
-
-
-    1b
-
-
-
-
-### Querying unstructured data
-
-With the release of Anymap in kdb+ 3.6 unstructured data has become much easier to manage in kdb+.
-
-However, some considerations do need to be taken in to account.
-
-* [https://code.kx.com/q/ref/releases/ChangesIn3.6/#anymap](https://code.kx.com/q/ref/releases/ChangesIn3.6/#anymap)
-
-
-
-
-```q
-sample:([] data:decode each read0 `:sample.json)
-sample
-```
-
-
-
-
-    data                                                                                                                                                         
-    -------------------------------------------------------------------------------------------------------------------------------------------------------------
-    `data`expiry`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
-    `result`message`receipt`requestID!(`success;"success";123154 4646646;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                
-    `receipt`requestID!(12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
-    `data`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                
-    `receipt`requestID!(12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
-    `listSize`list!(2;"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev")        
-    (,`requestID)!,,"b4a566eb-2529-5cf4-1327-857e3d73653e"                                                                                                       
-
-
-
-
-Indexing at depth allows the sparse data within the dictionaries to be queried easily
-
-
-```q
-select data[;`requestID] from sample
-```
-
-
-
-
-    x                                      
-    ---------------------------------------
-    ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-    0N                                     
-    ,"b4a566eb-2529-5cf4-1327-857e3d73653e"
-
-
-
-
-When a key is missing from a dictionary kdb+ will return a `null` value.
-
-The type of this null is determined by the type of the first key within the dictionary.
-
-This poses an issue.
-
-
-```q
-//Many different nulls are returned
-select data[;`expiry] from sample
-```
-
-
-
-
-    x                       
-    ------------------------
-    17682D19:58:45.000000000
-    `                       
-    `long$()                
-    ,""                     
-    `long$()                
-    0N                      
-    ,""                     
-
-
-
-
-
-```q
-//Succeds on first 2 rows as by chance only null returned in a atom null
-select from (2#sample) where null data[;`expiry]
-//Fails once moving to 3 rows as there is an empty list null
-select from (3#sample) where null data[;`expiry]
-```
-
-
-
-
-    data                                                                                                         
-    -------------------------------------------------------------------------------------------------------------
-    `result`message`receipt`requestID!(`success;"success";123154 4646646;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
-
-    evaluation error:
-    type
-      [0]  select from (3#sample) where null data[;`expiry]
-           ^
-
-
-Checking if a given key in in the rows dictionary will only return rows which do not have the key
-
-
-```q
-select from sample where `expiry in/:key each data, not null data[;`expiry]
-```
-
-
-
-
-    data                                                                                                                                                         
-    -------------------------------------------------------------------------------------------------------------------------------------------------------------
-    `data`expiry`requestID!(,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
-
-
-
-
-If we prepend each dictionary with the null symbol key ``` and generic null value `(::)` we now can query in a more free manner.
-
-
-```q
-update data:(enlist[`]!enlist (::))(,)/:data from `sample;
-sample
-```
-
-
-
-
-    data                                                                                                                                                             
-    -----------------------------------------------------------------------------------------------------------------------------------------------------------------
-    ``data`expiry`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
-    ``result`message`receipt`requestID!(::;`success;"success";123154 4646646;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                
-    ``receipt`requestID!(::;12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
-    ``data`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                
-    ``receipt`requestID!(::;12345678 98751466;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                               
-    ``listSize`list!(::;2;"lzplogjxokyetaeflilquziatzpjagsginnajfpbkomfancdmhmumxhazblddhccprlxtreageghmwtmyeyabavpbcksadnirgddymljslffrplcerdvhbvvshhmcpev")        
-    ``requestID!(::;,"b4a566eb-2529-5cf4-1327-857e3d73653e")                                                                                                         
-
-
-
-
-All nulls when a given key is missing are now `(::)`
-
-
-```q
-select expiry:data[;`expiry] from sample
-```
-
-
-
-
-    expiry                  
-    ------------------------
-    17682D19:58:45.000000000
-    ::                      
-    ::                      
-    ::                      
-    ::                      
-    ::                      
-    ::                      
-
-
-
-
-The previously failing query can now execute as there are no list type nulls
-
-
-```q
-select from sample where not null data[;`expiry]
-```
-
-
-
-
-    data                                                                                                                                                             
-    -----------------------------------------------------------------------------------------------------------------------------------------------------------------
-    ``data`expiry`requestID!(::;,"26cd02c57f9db87b1df9f2e7bb20cc7b2c47e077ff5b0aa0866568bf5036bb65";17682D19:58:45.000000000;,"b4a566eb-2529-5cf4-1327-857e3d73653e")
-
-
-
-
-These `(::)` can also be replaced with filled with chosen values.
-
-Here an infinite value is chosen:
-
-
-```q
-fill:{@[y;where null y;:;x]}
-select expiry:fill[0Wn]data[;`expiry] from sample
-```
-
-
-
-
-    expiry                  
-    ------------------------
-    17682D19:58:45.000000000
-    0W                      
-    0W                      
-    0W                      
-    0W                      
-    0W                      
-    0W                      
-
-
-
