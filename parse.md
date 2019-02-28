@@ -414,7 +414,7 @@ Named pipes allow the disk to be taken out of the equation by streaming the unco
 For more information and examples see:
 https://code.kx.com/q/cookbook/named-pipes/
 
-### Stream it in (.Q.fs & .Q.fps)
+### Stream it in (.Q.fs, .Q.fsn & .Q.fps)
 
 As text files grow the memory usage of the ingestion process can become a concern.
 `.Q.fs`,`.Q.fsn` and `.Q.fps` allow control of this by providing the ability to specify the number of lines at a time to pull in to memory. Then each batch can be published to another process on written to disk before continuing.
