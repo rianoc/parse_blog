@@ -1,12 +1,12 @@
 
 # Parsing data in kdb+
 
-Passing data between systems can often become complex, if not impossible, due to lack of interoperability. While kdb+ provides many [interfaces](https://code.kx.com/q/interfaces/) to simplify integration its native text parsing capabilities remain extremely important too as they can be used to greatly simplify data ingestion and inter-process communication. These requirements are often encountered exploration or proof-of-concept phases of projects but there are two additional areas where they can be critical:
+Passing data between systems can often become complex, if not impossible, due to lack of interoperability. While kdb+ provides many interfaces on [https://code.kx.com/q/interfaces/](https://code.kx.com/q/interfaces/) to simplify integration its native text parsing capabilities remain extremely important too as they can be used to greatly simplify data ingestion and inter-process communication. These requirements are often encountered exploration or proof-of-concept phases of projects but there are two additional areas where they can be critical:
 
 * For large once off ingestion of data
 * For ongoing ingestion of data from a provider which does not provide other methods.
 
-In both of these cases it is important the parsing of data is as efficient as possible. In this blog we offer some tips to implement clean and efficient parsing of CSV formats to kdb+ and n a follow-up blow we will look at the increasingly popular alternative format, JSON.
+In both of these cases it is important the parsing of data is as efficient as possible. In this blog we offer some tips to implement clean and efficient parsing of CSV formats to kdb+ and in a follow-up blog we will look at the increasingly popular alternative format, JSON.
 
 ## CSV
 
@@ -281,10 +281,9 @@ A selection:
 
 ### Don't do the same work twice (.Q.fu)
 
-There are commonly fields which we cannot parse natively. Completing these custom string manipulations can be a computationally intensive task.
+There are often fields which we cannot parse natively. Completing these custom string manipulations can be a computationally intensive task.
 One way to avoid this is by applying the function once per distinct item and mapping the result.
 For this reason it is only of benefit when the data has a smaller number of distinct elements in it.
-
 .i.e suitable for dates but not unique timestamps etc.
 
 `.Q.fu` is the inbuilt function which provides simplifies this task
@@ -348,11 +347,10 @@ manyDates:100000#enlist "November 30 2018"
 
 ### Straight line speed (Vectorised operations)
 
-Sometimes as part of parsing data mathematical calculations will need to be performed.
+Sometimes part of parsing data requires mathematical calculations be performed.
 A common example of this is differing epochs between languages and systems.
-
-When parsing a column one may write functions which iterate though a field at a time rather than operating on the whole column.
-This is sometimes the only choice. However if calculations are involved kdb+ has native vector based operations which gain huge efficiency by operating on the column as a whole.
+When parsing a column one may write functions which iterate though a row at a time rather than operating on the whole column.
+This is sometimes the only choice. However if suitable kdb+ has native vector based operations which gain huge efficiency by operating on the column as a whole.
 
 
 
@@ -402,7 +400,7 @@ manyTimes:1000000#enlist "3755289600"
 
 
 
-### Skip the middle man (named pipes)
+### Skip the middle man (Named pipes)
 
 Often plain text files will come compressed. This requirement them to be:
 1. Decompressed to disk in full
