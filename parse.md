@@ -10,7 +10,7 @@ In both of these cases it is important the parsing of data is as efficient as po
 
 ## CSV
 
-CSV files do not have flexibility in the type data structures they hold but parsing is straight forward.
+CSV files do not have flexibility in the type of data structures they hold but parsing is straight forward.
 
 Take the following example file:
 
@@ -46,6 +46,12 @@ meta tab
     1       4        b         "bb"      2018.11.23 00:01:00.000
     2       5        h         "dd"      2018.11.23 00:01:00.003
 
+
+
+
+
+
+
     c        | t f a
     ---------| -----
     longCol  | j    
@@ -70,7 +76,7 @@ For more information, setting and the loading of fixed-width fields see:
 A common issue is users who are ingesting fields will default to using `S`.
 This is the symbol [datatype](https://code.kx.com/q/ref/card/#datatypes) which is not designed for the passing of random character data. Instead `*` should be used to ingest to character arrays. Type `10h` or `C` in a table meta.
 
-This is because symbols are interned strings. Any time a symbol of a new value is created in a process it will be added to an internal lookup table. These cannot be freed during garbage collection with [.Q.gc](https://code.kx.com/q/ref/dotq/#qgc-garbage-collect) and will instead persist in the memory of the process until it exits.
+This is because symbols are interned strings. Any time a symbol of a new value is created in a process it will be added to an internal lookup. These cannot be freed during garbage collection with [.Q.gc](https://code.kx.com/q/ref/dotq/#qgc-garbage-collect) and will instead persist in the memory of the process until it exits.
 
 You can see the number of syms in this table and the space memory they are using with [.Q.w](https://code.kx.com/q/ref/dotq/#qw-memory-stats)
 
@@ -281,12 +287,12 @@ A selection:
 
 ### Don't do the same work twice (.Q.fu)
 
-There are often fields which we cannot parse natively. Completing these custom string manipulations can be a computationally intensive task.
+There are often fields which we cannot parse natively. Parsing using custom string manipulations is a computationally intensive task.
 One way to avoid this is by applying the function once per distinct item and mapping the result.
-For this reason it is only of benefit when the data has a smaller number of distinct elements in it.
-.i.e suitable for dates but not unique timestamps etc.
+This is only suitable when the data has a smaller number of distinct elements in it.
+.i.e for dates but not unique timestamps etc.
 
-`.Q.fu` is the inbuilt function which provides simplifies this task
+`.Q.fu` is the inbuilt function which simplifies this task
 
 
 ```q
@@ -349,7 +355,7 @@ manyDates:100000#enlist "November 30 2018"
 
 Sometimes part of parsing data requires mathematical calculations be performed.
 A common example of this is differing epochs between languages and systems.
-When parsing a column one may write functions which iterate though a row at a time rather than operating on the whole column.
+When parsing a column one may write functions which iterate through a row at a time rather than operating on the whole column.
 This is sometimes the only choice. However if suitable kdb+ has native vector based operations which gain huge efficiency by operating on the column as a whole.
 
 
@@ -402,11 +408,11 @@ manyTimes:1000000#enlist "3755289600"
 
 ### Skip the middle man (Named pipes)
 
-Often plain text files will come compressed. This requirement them to be:
+Often plain text files will come compressed. This requires them to be:
 1. Decompressed to disk in full
 2. Ingested from disk
 
-This step in an inefficient use of resources. As the uncompressed file will only ever be read once.
+This is an inefficient use of resources, as the uncompressed file will only ever be read once.
 Named pipes allow the disk to be taken out of the equation by streaming the uncompressed data directly to kdb+
 
 For more information and examples see:
