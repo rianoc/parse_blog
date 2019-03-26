@@ -73,8 +73,8 @@ For more information, setting and the loading of fixed-width fields see:
 
 ## Don't clog your memory
 
-A common issue is users who are ingesting fields will default to using `S`.
-This is the symbol [datatype](https://code.kx.com/q/ref/card/#datatypes) which is not designed for the passing of random character data. Instead `*` should be used to ingest to character arrays. Type `10h` or `C` in a table meta.
+A common mistake by users loading CSV data is to use `S` as a default datatype.
+This is the symbol [datatype](https://code.kx.com/q/ref/card/#datatypes) which should only be used when loading columns that have a small number of unique values. Instead `*` when uncertain, this will load the data as strings (`C` in a table meta).
 
 This is because symbols are interned strings. Any time a symbol of a new value is created in a process it will be added to an internal lookup. These cannot be freed during garbage collection with [.Q.gc](https://code.kx.com/q/ref/dotq/#qgc-garbage-collect) and will instead persist in the memory of the process until it exits.
 
@@ -105,6 +105,12 @@ r
 
     `0`1`2`3`4`5`6`7`8`9`10`11`12`13`14`15`16`17`18`19`20`21`22`23`24`25`26`27`28..
 
+
+
+
+
+
+
     11204 588234
 
 
@@ -112,9 +118,9 @@ r
 
 
 ```q
-delete r from `.
-.Q.gc[]
-.Q.w[]`syms`symw //After the object is deleted and garbage collection no memory is returned to the process 
+delete r from `. //Delete r
+.Q.gc[] //Run garbage collection
+.Q.w[]`syms`symw //No memory is returned to the process 
 ```
 
 
@@ -122,18 +128,32 @@ delete r from `.
 
     `.
 
+
+
+
+
+
+
     0
 
-    11205 588264
 
 
 
+
+
+
+    1200 53438
+
+
+
+
+The white paper [Working With Sym Files](https://code.kx.com/v2/wp/symfiles/) covers this topic in greater detail when it comes time to store symbols to disk.
 
 ## Complex parsing
 
 ### Date format
 
-* Use `\z` to control between parsing dates. 0 is "mm/dd/yyyy" and 1 is "dd/mm/yyyy".
+* Use `\z` to control parsing of dates. Set to 0 for "mm/dd/yyyy" and 1 for "dd/mm/yyyy".
    * [https://code.kx.com/q/ref/syscmds/#z-date-parsing](https://code.kx.com/q/ref/syscmds/#z-date-parsing)
 
 
@@ -181,10 +201,9 @@ delete r from `.
 
 
 
-This is much preferred than the alternative
-
 
 ```q
+//Using \z correctly will perform much better than using a manual parsing method
 manyDates:100000#enlist "30/12/2010"
 \t "D"${"." sv reverse "/" vs x} each manyDates
 ```
@@ -192,7 +211,7 @@ manyDates:100000#enlist "30/12/2010"
 
 
 
-    142
+    98
 
 
 
@@ -211,7 +230,7 @@ manyDates:100000#enlist "30/12/2010"
 
 
 
-### Other accepted formats
+### Other accepted time and date formats
 
 Many other formats can be parsed by kdb+.
 
@@ -271,7 +290,8 @@ A selection:
 
 
 ```q
-//These value only parse to the deprecated datetime Z format - but can quickly be cast to timestamps
+//These value only parse to the deprecated datetime Z format
+//We can simply cast them to timestamps
 `timestamp$"Z"$"2019-01-01T00:00:00.000Z"
 ```
 
@@ -292,7 +312,7 @@ One way to avoid this is by applying the function once per distinct item and map
 This is only suitable when the data has a smaller number of distinct elements in it.
 .i.e for dates but not unique timestamps etc.
 
-`.Q.fu` is the inbuilt function which simplifies this task
+`.Q.fu` simplifies this task
 
 
 ```q
@@ -416,7 +436,7 @@ This is an inefficient use of resources, as the uncompressed file will only ever
 Named pipes allow the disk to be taken out of the equation by streaming the uncompressed data directly to kdb+
 
 For more information and examples see:
-https://code.kx.com/q/cookbook/named-pipes/
+[https://code.kx.com/q/cookbook/named-pipes/](https://code.kx.com/q/cookbook/named-pipes/)
 
 ### Stream it in (.Q.fs, .Q.fsn & .Q.fps)
 
@@ -429,6 +449,6 @@ As text files grow the memory usage of the ingestion process can become a concer
 
 As well as memory management `.Q.fsn` also allows us to ensure our optimizations using `.Q.fu` and vectorised operations are supplied with sufficient data on each invocation to see speed ups.
 
-* https://code.kx.com/q/ref/dotq/#qfs-streaming-algorithm
-* https://code.kx.com/q/ref/dotq/#qfsn-streaming-algorithm
-* https://code.kx.com/q/ref/dotq/#qfps-streaming-algorithm
+* [https://code.kx.com/q/ref/dotq/#qfs-streaming-algorithm](https://code.kx.com/q/ref/dotq/#qfs-streaming-algorithm)
+* [https://code.kx.com/q/ref/dotq/#qfsn-streaming-algorithm](https://code.kx.com/q/ref/dotq/#qfsn-streaming-algorithm)
+* [https://code.kx.com/q/ref/dotq/#qfps-streaming-algorithm](https://code.kx.com/q/ref/dotq/#qfps-streaming-algorithm)
