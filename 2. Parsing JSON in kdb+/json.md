@@ -45,7 +45,7 @@ Take this example converting a long in kfb+ to JSON using `.j.j` and parsing it 
 
 
 
-* [https://code.kx.com/q/ref/dotj/](https://code.kx.com/q/ref/dotj/)
+* [https://code.kx.com/v2/ref/dotj](https://code.kx.com/v2/ref/dotj)
 
 ### JSON table encoding
 
@@ -195,14 +195,14 @@ generalHelper[;castRules] .j.k .j.j tab
 
 
 
-* [https://code.kx.com/q/ref/casting/#cast](https://code.kx.com/q/ref/casting/#cast)
-* [https://code.kx.com/q/ref/casting/#tok](https://code.kx.com/q/ref/casting/#tok)
+* [https://code.kx.com/v2/ref/cast](https://code.kx.com/v2/ref/cast)
+* [https://code.kx.com/v2/ref/tok](https://code.kx.com/v2/ref/tok)
 
 ### Field based JSON encoding
 
-JSON can hold more complex data structures than csv
+One common use of JSON is objects (key/value pairs) which parse in kdb+ as dictionaries.
 
-One common example are dictionaries, useful for storing sparse datasets which do not make sense to have each key becoming a new column.
+These are useful for storing sparse datasets which do not make sense to have each key becoming a new column.
 
 
 ```q
@@ -224,9 +224,9 @@ read0 `:sample.json
 
 
 
-One way to manage these items may be to create a utility which will cast any dictionary using `key` values to control casting rules.
+One way to manage these items may be to create a utility which will cast any dictionary using keys to control casting rules.
 
-This can allow more complex parsing rules for each field.
+This allows more complex parsing rules for each field.
 
 
 ```q
@@ -310,7 +310,7 @@ k2j[`blocks]:(::);
 
 
 ```q
-//The encode utility allows us to roundtrip
+//The encode utility allows us to round trip
 {sample~{encode decode x} each sample:read0 x}`:sample.json
 ```
 
@@ -328,7 +328,7 @@ With the release of Anymap in kdb+ 3.6 unstructured data has become much easier 
 
 However, some considerations do need to be taken in to account.
 
-* [https://code.kx.com/q/ref/releases/ChangesIn3.6/#anymap](https://code.kx.com/q/ref/releases/ChangesIn3.6/#anymap)
+* [https://code.kx.com/v2/releases/ChangesIn3.6/#anymap](https://code.kx.com/v2/releases/ChangesIn3.6/#anymap)
 
 
 
@@ -436,7 +436,7 @@ select from (3#sample) where null data[;`expiry]
     
 
 
-Checking if a given key in in the rows dictionary will only return rows which do not have the key
+Checking if a given key is in the dictionary will only return rows which do not have the key.
 
 
 ```q
